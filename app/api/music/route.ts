@@ -3,33 +3,22 @@ import { siteConfig } from "../../../siteConfig";
 
 const API_BASE = "https://music-api.gdstudio.xyz/api.php";
 
-async function safeJson(res: Response) {
+async function safeJson(res) {
   try {
     const text = await res.text();
-    try {
-      return JSON.parse(text);
-    } catch {
-      // 可能是纯文本/二进制，直接返回
-      return text;
-    }
-  } catch {
-    return null;
-  }
+    try { return JSON.parse(text); } catch { return text; }
+  } catch { return null; }
 }
 
-// 通过 ID 一次获取歌曲的所有信息（url + pic + lrc）
-async function fetchSongDetail(id: string) {
+async function fetchSongDetail(id) {
   try {
     const [urlRes, picRes, lrcRes] = await Promise.all([
-      fetch(`${API_BASE}?types=url&source=netease&id=${id}`, {
-        headers: { "User-Agent": "Mozilla/5.0" },
-      }),
-      fetch(`${API_BASE}?types=pic&source=netease&id=${id}&size=300`, {
-        headers: { "User-Agent": "Mozilla/5.0" },
-      }),
-      fetch(`${API_BASE}?types=lrc&source=netease&id=${id}`, {
-        headers: { "User-Agent": "Mozilla/5.0" },
-      }),
+      fetch(`${API_BASE}?types=url&source=netease&id=${id}`, { headers: { "User-Agent": "Mozilla/5.0" } }),
+      fetch(`${API_BASE}?types=pic&source=netease&id=${id}&size=300`, { headers: { "User-Agent": "Mozilla/5.0" } }),
+      fetch(`${API_BASE}?types=lyric&source=netease&id=${id}`, { headers: { "User-Agent": "Mozilla/5.0" } })
+        .catch(async () => {
+          return await fetch(`https://music.163.com/api/song/lyric?os=pc&id=${id}&lv=-1&kv=-1&tv=-1`, { headers: { "User-Agent": "Mozilla/5.0" } });
+        }),
     ]);
 
     const urlData = await safeJson(urlRes);
@@ -46,65 +35,46 @@ async function fetchSongDetail(id: string) {
   }
 }
 
-// 从 URL 路径中提取网易云 ID 信息（备用方案）
-async function fetchSongMetaFromId(id: string) {
+async function fetchSongMetaFromId(id) {
   try {
-    const res = await fetch(`https://music.163.com/api/song/detail/?ids=[${id}]&csrf_token=`, {
-      headers: { "User-Agent": "Mozilla/5.0" },
-    });
+    const res = await fetch(`https://music.163.com/api/song/detail/?ids=[${id}]&csrf_token=`, { headers: { "User-Agent": "Mozilla/5.0" } });
     if (!res.ok) return { name: "未知歌曲", artist: "未知歌手" };
     const data = await res.json();
     const song = data?.songs?.[0];
     if (!song) return { name: "未知歌曲", artist: "未知歌手" };
-    return {
-      name: song.name || "未知歌曲",
-      artist: song.artists?.[0]?.name || "未知歌手",
-    };
+    return { name: song.name || "未知歌曲", artist: song.artists?.[0]?.name || "未知歌手" };
   } catch {
     return { name: "未知歌曲", artist: "未知歌手" };
   }
 }
 
-export async function GET(req: Request) {
+export async function GET(req) {
   const { searchParams } = new URL(req.url);
   const idsParam = searchParams.get("ids");
-  const ids = idsParam
-    ? idsParam.split(",").filter(Boolean)
-    : siteConfig.cloudMusicIds || [];
+  const ids = idsParam ? idsParam.split(",").filter(Boolean) : siteConfig.cloudMusicIds || [];
 
   try {
-    const songs = await Promise.all(
-      ids.map(async (id) => {
-        const [detail, meta] = await Promise.all([
-          fetchSongDetail(id),
-          fetchSongMetaFromId(id),
-        ]);
+    const songs = await Promise.all(ids.map(async (id) => {
+      const [detail, meta] = await Promise.all([
+        fetchSongDetail(id),
+        fetchSongMetaFromId(id),
+      ]);
+      const customCover = siteConfig.musicCovers?.[id];
+      return {
+        id,
+        name: meta.name,
+        artist: meta.artist,
+        cover: customCover || detail.pic,
+        url: detail.url,
+        lrc: detail.lrc,
+        pic: detail.pic,
+        customCover: !!customCover,
+      };
+    }));
 
-        // 优先使用 siteConfig 中配置的封面
-        const customCover = (siteConfig as any).musicCovers?.[id];
-        const cover = customCover || detail.pic;
-
-        return {
-          id,
-          name: meta.name,
-          artist: meta.artist,
-          cover,
-          url: detail.url,
-          lrc: detail.lrc,
-          pic: detail.pic,
-          customCover: !!customCover,
-        };
-      })
-    );
-
-    // 过滤掉无法获取 URL 的歌曲
     const validSongs = songs.filter((s) => s.url);
-
     return NextResponse.json(validSongs);
   } catch (error) {
-    return NextResponse.json(
-      { error: "Failed to fetch music", details: String(error) },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to fetch music", details: String(error) }, { status: 500 });
   }
 }
