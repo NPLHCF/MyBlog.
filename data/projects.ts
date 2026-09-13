@@ -13,7 +13,7 @@ export type Project = {
 export const projectsData: Project[] = [
   {
     "id": "proj_mia_playwright",
-    "name": "Claude Code Agent + Playwright 浏览器自动化",
+    "name": "Claude Code + Playwright 浏览器自动化",
     "githubUrl": "https://b23.tv/vmbpruj",
     "description": "基于 Claude Code Agent 框架集成 Playwright 浏览器自动化能力。实现 Agent 自主操控浏览器完成网页交互、页面数据采集与统计；将完整的浏览器执行流程记录并封装为可复用自定义 Skill，实现业务流程固化，支持后续重复调用，验证 Agent 通过工具完成网页自动化任务的能力。",
     "icon": "🎬",
